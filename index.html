@@ -146,3 +146,520 @@
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  <!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Coin Rush</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f3f4f8; --fg: #1b1e33; --muted: #5b607c;
+    --accent: #c77700; --panel: #e3e6f0; --border: #c8ccdd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12141f; --fg: #e8e8f0; --muted: #9aa0be;
+      --accent: #ffd54a; --panel: #1e2236; --border: #2b2f4a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141f; --fg: #e8e8f0; --muted: #9aa0be;
+    --accent: #ffd54a; --panel: #1e2236; --border: #2b2f4a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-top: max(16px, env(safe-area-inset-top, 0px));
+  }
+  main { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  h1 { margin: 0; font-size: 1.5rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  canvas {
+    display: block; width: 100%; max-width: 960px; height: auto; aspect-ratio: 16 / 9;
+    background: #000; border: 3px solid var(--border); border-radius: 8px; outline: none;
+    touch-action: none;
+  }
+  canvas:focus-visible { border-color: var(--accent); }
+  .help { margin: 0; font-size: .9rem; color: var(--muted); line-height: 1.5; }
+  .help b { color: var(--fg); }
+  .pad { display: flex; justify-content: space-between; gap: 12px; }
+  .pad-group { display: flex; gap: 10px; }
+  .pad button {
+    min-width: 72px; min-height: 60px; padding: 0 18px; font: inherit; font-size: 1.3rem; font-weight: 700;
+    color: var(--fg); background: var(--panel); border: 2px solid var(--border); border-radius: 10px;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .pad button:active { background: var(--border); }
+  .pad button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  @media (hover: hover) and (pointer: fine) { .pad { display: none; } }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap">
+</head>
+<body>
+
+<main>
+  <h1>Coin Rush</h1>
+  <canvas id="game" width="960" height="540" tabindex="0" aria-label="Área do jogo"></canvas>
+  <p class="help">
+    Clique no jogo e pressione <b>Enter</b> ou <b>Espaço</b> para começar.
+    <b>← →</b> ou <b>A D</b> movem, <b>Espaço</b>, <b>↑</b> ou <b>W</b> pulam, <b>R</b> reinicia.
+  </p>
+  <div class="pad" aria-label="Controles de toque">
+    <div class="pad-group">
+      <button type="button" data-key="ArrowLeft" aria-label="Esquerda">◀</button>
+      <button type="button" data-key="ArrowRight" aria-label="Direita">▶</button>
+    </div>
+    <div class="pad-group">
+      <button type="button" data-key="Space" aria-label="Pular">PULAR</button>
+    </div>
+  </div>
+</main>
+
+<script>
+/* =====================================================
+   Coin Rush — v1.1 (Parte 2: testes, correções e documentação)
+   Plataforma 2D em Canvas + JavaScript puro.
+   Correções marcadas com // [FIX]
+   ===================================================== */
+(() => {
+  'use strict';
+
+  // ---------- Configuração ----------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const WORLD_W = 3700;
+  const GRAVITY = 2000;
+  const MAX_SPEED = 280;
+  const ACCEL = 2200;
+  const FRICTION = 2600;
+  const JUMP_V = -760;
+  const COYOTE_TIME = 0.10;
+  const JUMP_BUFFER = 0.12;
+  const START_LIVES = 3;
+  const START_TIME = 120;
+  const GROUND_Y = 470;
+
+  // [FIX 1] Sistema de fases
+  const TOTAL_LEVELS = 3;
+  let currentLevel = 1;
+
+  // ---------- Entrada ----------
+  const keys = Object.create(null);
+  let jumpBuffer = 0;
+
+  const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW'];
+  const BLOCK_KEYS = ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+  addEventListener('keydown', (e) => {
+    if (BLOCK_KEYS.includes(e.code)) e.preventDefault();
+    if (e.repeat) return;
+    keys[e.code] = true;
+
+    if (JUMP_KEYS.includes(e.code)) jumpBuffer = JUMP_BUFFER;
+
+    // [FIX 1] ENTER: começar / avançar de fase
+    if (e.code === 'Enter' && (state === 'menu' || state === 'lost')) {
+      resetGame(true);
+      state = 'playing';
+    }
+    if (e.code === 'Enter' && state === 'won') {
+      if (currentLevel < TOTAL_LEVELS) {
+        currentLevel++;
+        resetGame(false);
+        state = 'playing';
+      } else {
+        currentLevel = 1;
+        resetGame(true);
+        state = 'playing';
+      }
+    }
+    if (e.code === 'KeyR') {
+      resetGame(false);
+      state = 'playing';
+    }
+    if (e.code === 'Space' && state === 'menu') {
+      resetGame(true);
+      state = 'playing';
+    }
+  });
+  addEventListener('keyup', (e) => { keys[e.code] = false; });
+  addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  
+  // ---------- Desenho ----------
+  function drawPlanet(px, py, r, c1, c2, ring) {
+    if (ring) {
+      ctx.strokeStyle = ring;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.ellipse(px, py, r * 1.7, r * 0.45, -0.3, Math.PI, Math.PI * 2);
+      ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(px - r * 0.35, py - r * 0.35, r * 0.1, px, py, r);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (ring) {
+      ctx.strokeStyle = ring;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.ellipse(px, py, r * 1.7, r * 0.45, -0.3, 0, Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0b0626');
+    g.addColorStop(0.6, '#241250');
+    g.addColorStop(1, '#4a1f6e');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    const blobs = [
+      [220, 160, 260, 'rgba(255,90,200,0.22)'],
+      [700, 120, 300, 'rgba(90,120,255,0.22)'],
+      [520, 330, 280, 'rgba(120,60,200,0.25)'],
+    ];
+    blobs.forEach(([bx, by, br, col], i) => {
+      const x = wrap(bx - camX * 0.05 * (i + 1), W + 600) - 300;
+      const rg = ctx.createRadialGradient(x, by, 0, x, by, br);
+      rg.addColorStop(0, col);
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = rg;
+      ctx.fillRect(x - br, by - br, br * 2, br * 2);
+    });
+
+    for (const s of stars) {
+      const sx = wrap(s.x - camX * s.f, W);
+      const a = 0.45 + 0.55 * Math.sin(timeSinceStart * 2 + s.p);
+      ctx.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`;
+      ctx.fillRect(sx, s.y, s.s, s.s);
+    }
+
+    drawPlanet(wrap(720 - camX * 0.08, W + 500) - 150, 140, 70, '#ffb86b', '#b5462f', 'rgba(255,220,160,0.7)');
+    drawPlanet(wrap(240 - camX * 0.15, W + 400) - 100, 300, 34, '#8be9ff', '#2a6fb0', null);
+    drawPlanet(wrap(1000 - camX * 0.22, W + 600) - 200, 90, 20, '#d9a6ff', '#6a2fb0', null);
+  }
+
+  function drawSolids() {
+    for (const s of solids) {
+      if (s.x + s.w < camX - 10 || s.x > camX + W + 10) continue;
+      const x = s.x - camX;
+      if (s.ground) {
+        ctx.fillStyle = '#2b1f55';
+        ctx.fillRect(x, s.y, s.w, s.h);
+        ctx.fillStyle = '#4a3a8c';
+        ctx.fillRect(x, s.y, s.w, 12);
+        ctx.fillStyle = '#7cf4ff';
+        ctx.fillRect(x, s.y, s.w, 3);
+        for (let cx = Math.ceil(s.x / 56) * 56; cx < s.x + s.w - 10; cx += 56) {
+          const dx = cx - camX;
+          if (dx < -20 || dx > W + 20) continue;
+          const hgt = 6 + (cx * 7 % 5) * 3;
+          ctx.fillStyle = (cx / 56) % 2 === 0 ? '#ff7ad9' : '#7cf4ff';
+          ctx.beginPath();
+          ctx.moveTo(dx, s.y);
+          ctx.lineTo(dx + 4, s.y - hgt);
+          ctx.lineTo(dx + 8, s.y);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,.18)';
+          ctx.fillRect(dx + 14, s.y + 28 + (cx % 3) * 14, 4, 4);
+        }
+      } else {
+        ctx.fillStyle = '#3b4a7a';
+        ctx.fillRect(x, s.y, s.w, s.h);
+        ctx.fillStyle = '#ff7ad9';
+        ctx.fillRect(x, s.y, s.w, 4);
+        ctx.fillStyle = '#1f2a52';
+        ctx.fillRect(x, s.y + s.h - 5, s.w, 5);
+        ctx.fillStyle = '#7cf4ff';
+        for (let lx = 10; lx < s.w - 6; lx += 22) ctx.fillRect(x + lx, s.y + 9, 4, 4);
+      }
+    }
+  }
+
+  function drawStar(cx, cy, r, spin) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? r : r * 0.45;
+      const ang = -Math.PI / 2 + i * Math.PI / 5;
+      const px = cx + Math.cos(ang) * rad * spin;
+      const py = cy + Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  function drawCoins() {
+    for (const c of coins) {
+      if (c.taken || c.x < camX - 20 || c.x > camX + W + 20) continue;
+      const spin = Math.max(0.25, Math.abs(Math.cos(timeSinceStart * 3 + c.x * 0.05)));
+      const bob = Math.sin(timeSinceStart * 3 + c.x * 0.03) * 3;
+      const cx = c.x - camX, cy = c.y + bob;
+      ctx.fillStyle = 'rgba(255, 224, 100, 0.22)';
+      ctx.beginPath(); ctx.arc(cx, cy, c.r + 6, 0, Math.PI * 2); ctx.fill();
+      drawStar(cx, cy, c.r, spin);
+      ctx.fillStyle = '#ffd54a';
+      ctx.fill();
+      ctx.strokeStyle = '#b78600';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  function drawEnemies() {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const x = e.x - camX;
+      if (x < -40 || x > W + 40) continue;
+      const bob = Math.sin(timeSinceStart * 6 + e.x * 0.05) * 2;
+      const y = e.y + bob;
+      ctx.strokeStyle = '#2fa862';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 9, y + 2); ctx.lineTo(x + 5, y - 8);
+      ctx.moveTo(x + 23, y + 2); ctx.lineTo(x + 27, y - 8);
+      ctx.stroke();
+      ctx.fillStyle = '#ff7ad9';
+      ctx.fillRect(x + 2, y - 11, 6, 6);
+      ctx.fillRect(x + 24, y - 11, 6, 6);
+      ctx.fillStyle = '#43d17a';
+      ctx.beginPath();
+      ctx.moveTo(x, y + e.h);
+      ctx.quadraticCurveTo(x, y, x + e.w / 2, y);
+      ctx.quadraticCurveTo(x + e.w, y, x + e.w, y + e.h);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x + 9, y + 7, 14, 10);
+      ctx.fillStyle = '#240b52';
+      const look = e.vx > 0 ? 4 : 0;
+      ctx.fillRect(x + 11 + look, y + 9, 6, 6);
+    }
+  }
+
+  function drawGoal() {
+    const cx = goal.x - camX + 6;
+    const cy = goal.y + goal.h / 2;
+    if (cx < -80 || cx > W + 80) return;
+    const pulse = Math.sin(timeSinceStart * 4) * 3;
+    const rg = ctx.createRadialGradient(cx, cy, 8, cx, cy, 70);
+    rg.addColorStop(0, 'rgba(124,244,255,.9)');
+    rg.addColorStop(1, 'rgba(124,244,255,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(cx - 80, cy - 80, 160, 160);
+    ctx.fillStyle = '#12082e';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 26, 56, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff7ad9';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 28 + pulse * 0.3, 58 + pulse, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#7cf4ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 18, 42, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  function drawPlayer() {
+    if (player.invul > 0 && Math.floor(player.invul * 12) % 2 === 0) return;
+    const x = player.x - camX;
+    const y = player.y;
+    const w = player.w;
+    const f = player.facing;
+    const moving = player.onGround && Math.abs(player.vx) > 20;
+    const step = moving ? Math.sin(timeSinceStart * 18) * 3 : 0;
+    const air = !player.onGround;
+    const sway = (Math.min(Math.abs(player.vx), MAX_SPEED) / MAX_SPEED) * -f * 6 + (air ? -player.vy * 0.004 : 0);
+
+    ctx.fillStyle = '#e8b830';
+    ctx.beginPath();
+    ctx.moveTo(x + 1, y + 4);
+    ctx.lineTo(x + w - 1, y + 4);
+    ctx.lineTo(x + w - 1 + sway, y + 31);
+    ctx.lineTo(x + 1 + sway, y + 31);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffe0c2';
+    ctx.fillRect(x + 8 + step, y + 33, 5, 5);
+    ctx.fillRect(x + 15 - step, y + 33, 5, 5);
+    ctx.fillStyle = '#7e57c2';
+    ctx.fillRect(x + 7 + step, y + 37, 7, 3);
+    ctx.fillRect(x + 14 - step, y + 37, 7, 3);
+
+    ctx.fillStyle = '#2f7de1';
+    ctx.beginPath();
+    ctx.moveTo(x + 7, y + 17);
+    ctx.lineTo(x + w - 7, y + 17);
+    ctx.lineTo(x + w + 2, y + 35);
+    ctx.lineTo(x - 2, y + 35);
+    ctx.fill();
+    ctx.fillStyle = '#8fc3ff';
+    ctx.fillRect(x - 1, y + 32, w + 2, 3);
+    ctx.fillStyle = '#1d56a8';
+    ctx.fillRect(x + 8, y + 22, w - 16, 3);
+
+    const arm = air ? -3 : step * 0.6;
+    ctx.fillStyle = '#ffe0c2';
+    ctx.fillRect(x + 3, y + 19 + arm, 4, 8);
+    ctx.fillRect(x + w - 7, y + 19 - arm, 4, 8);
+
+    ctx.fillStyle = '#ffe0c2';
+    ctx.fillRect(x + 3, y + 3, w - 6, 15);
+
+    ctx.fillStyle = '#f2c94c';
+    ctx.fillRect(x + 2, y, w - 4, 7);
+    ctx.fillRect(x + 2, y, 4, 15);
+    ctx.fillRect(x + w - 6, y, 4, 15);
+
+    ctx.fillStyle = '#bfe0ff';
+    const bx = f > 0 ? x + w - 11 : x + 5;
+    ctx.fillRect(bx, y - 3, 7, 5);
+    ctx.fillStyle = '#5aa9ff';
+    ctx.fillRect(bx + 2, y - 2, 3, 3);
+
+    ctx.fillStyle = '#1a2a6c';
+    ctx.fillRect(x + 8 + f * 2, y + 9, 3, 5);
+    ctx.fillRect(x + 17 + f * 2, y + 9, 3, 5);
+    ctx.fillStyle = '#ff9db1';
+    ctx.fillRect(x + 6 + f * 2, y + 14, 4, 2);
+    ctx.fillRect(x + 18 + f * 2, y + 14, 4, 2);
+  }
+
+  function drawPopups() {
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for (const p of popups) {
+      ctx.globalAlpha = Math.min(1, p.t * 2);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x - camX, p.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHUD() {
+    ctx.fillStyle = 'rgba(10, 6, 38, .7)';
+    ctx.fillRect(0, 0, W, 44);
+
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+
+    drawStar(28, 22, 11, 1);
+    ctx.fillStyle = '#ffd54a';
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(`× ${coinCount} / ${coins.length}`, 46, 23);
+
+    ctx.textAlign = 'center';
+    ctx.fillText(`PONTOS  ${String(score).padStart(5, '0')}`, W / 2 - 60, 23);
+
+    const low = timeLeft < 20;
+    ctx.fillStyle = low ? '#ff6b6b' : '#fff';
+    ctx.fillText(`⏱ ${Math.ceil(timeLeft)}s`, W / 2 + 120, 23);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ff7ab8';
+    ctx.fillText('♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, START_LIVES - lives)), W - 16, 23);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawOverlay(title, lines, color) {
+    ctx.fillStyle = 'rgba(8, 4, 30, .78)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = color;
+    ctx.font = 'bold 54px system-ui, sans-serif';
+    ctx.fillText(title, W / 2, 190);
+    ctx.fillStyle = '#fff';
+    ctx.font = '22px system-ui, sans-serif';
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, 245 + i * 34));
+  }
+
+  function draw() {
+    drawBackground();
+    drawSolids();
+    drawGoal();
+    drawCoins();
+    drawEnemies();
+    if (player) drawPlayer();
+    drawPopups();
+    drawHUD();
+
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,60,120,${flash})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (state === 'menu') {
+      drawOverlay('COIN RUSH', [
+        `Fase ${currentLevel} de ${TOTAL_LEVELS} – Nebulosa Cintilante`,
+        'Ajude a boneca a cruzar a galáxia: colete estrelas,',
+        'pise nos aliens e chegue ao portal!',
+        'Pressione ENTER ou ESPAÇO para começar',
+      ], '#ffd54a');
+    } else if (state === 'won') {
+      // [FIX 2] fallback defensivo para bonusInfo
+      const bi = bonusInfo || { timeBonus: 0, lifeBonus: 0 };
+      const isLast = currentLevel >= TOTAL_LEVELS;
+      drawOverlay(isLast ? 'VOCÊ ZEROU O JOGO!' : `FASE ${currentLevel} CONCLUÍDA!`, [
+        `Estrelas: ${coinCount}/${coins.length}`,
+        `Bônus de tempo: +${bi.timeBonus}   Bônus de vidas: +${bi.lifeBonus}`,
+        `PONTUAÇÃO FINAL: ${score}`,
+        isLast ? 'ENTER para jogar novamente' : `ENTER para a Fase ${currentLevel + 1}`,
+      ], '#7cf4ff');
+    } else if (state === 'lost') {
+      drawOverlay('GAME OVER', [
+        timeLeft <= 0 ? 'O tempo acabou!' : 'A boneca ficou sem vidas.',
+        `Pontuação: ${score}`,
+        'ENTER para tentar de novo',
+      ], '#ff6b6b');
+    }
+  }
+
+  // ---------- Loop principal ----------
+  resetGame(true);
+  const STEP = 1 / 60;
+  let last = performance.now();
+  let acc = 0;
+
+  function frame(now) {
+    acc += Math.min(0.25, (now - last) / 1000);
+    last = now;
+    while (acc >= STEP) { update(STEP); acc -= STEP; }
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+<script>
+  // Controles de toque: simulam as teclas do teclado
+  (function () {
+    var fire = function (type, code) {
+      window.dispatchEvent(new KeyboardEvent(type, { code: code, bubbles: true, cancelable: true }));
+    };
+    document.querySelectorAll('.pad button').forEach(function (b) {
+      var code = b.getAttribute('data-key');
+      b.addEventListener('pointerdown', function (e) { e.preventDefault(); fire('keydown', code); });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) {
+        b.addEventListener(t, function () { fire('keyup', code); });
+      });
+    });
+    var c = document.getElementById('game');
+    c.addEventListener('pointerdown', function () { c.focus(); });
+    c.focus();
+  })();
+</script>
+
+</body>
+</html>
