@@ -282,6 +282,7 @@
         if (stomp) {
           e.alive = false; player.vy = -520; score += 100;
           addPopup('+100', e.x, e.y - 8, '#ffd54a');
+          playSound('stomp');
         } else if (player.invul <= 0) {
           lives--; flash = 0.35;
           if (lives <= 0) { state = 'lost'; return; }
