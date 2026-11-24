@@ -174,9 +174,10 @@
   let player, enemies, camX, score, coinCount, lives, timeLeft, checkpoint, flash, popups, bonusInfo;
   let timeSinceStart = 0;
 
-  function resetGame(fullReset = true) {
+   function resetGame(fullReset = true) {
+    const theme = LEVEL_THEMES[currentLevel - 1];
     coins.forEach(c => (c.taken = false));
-    enemies = enemyDefs.map(d => ({
+    enemies = enemyDefs.slice(0, theme.enemies).map(d => ({
       x: d.x, y: d.y - 28, w: 32, h: 28,
       minX: d.minX, maxX: d.maxX - 32,
       vx: (Math.random() < 0.5 ? -1 : 1) * 60, alive: true,
@@ -185,6 +186,11 @@
       score = 0; coinCount = 0; lives = START_LIVES;
       checkpoint = { x: 60, y: GROUND_Y - 40 };
     }
+    timeSinceStart = 0;
+    timeLeft = theme.time;
+    popups = []; bonusInfo = null; flash = 0;
+    spawnPlayer();
+  }
     timeSinceStart = 0;
     timeLeft = START_TIME; popups = []; bonusInfo = null; flash = 0;
     spawnPlayer();
