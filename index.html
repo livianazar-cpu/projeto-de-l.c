@@ -229,7 +229,8 @@
     jumpBuffer = Math.max(0, jumpBuffer - dt);
     player.coyote = player.onGround ? COYOTE_TIME : Math.max(0, player.coyote - dt);
     if (jumpBuffer > 0 && player.coyote > 0) {
-      player.vy = JUMP_V; player.onGround = false; player.coyote = 0; jumpBuffer = 0;
+          player.vy = JUMP_V; player.onGround = false; player.coyote = 0; jumpBuffer = 0;
+      playSound('jump');
     }
     const jumpHeld = keys.Space || keys.ArrowUp || keys.KeyW;
     if (!jumpHeld && player.vy < -250) player.vy += GRAVITY * 1.5 * dt;
