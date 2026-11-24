@@ -300,6 +300,41 @@
     }
   }
 
+  // [PARTE 3] Sistema de som (Web Audio API)
+  let audioCtx = null;
+  let muted = false;
+  function playSound(type) {
+    if (muted) return;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    const presets = {
+      jump:   { f: 520, d: 0.12, type: 'square', v: 0.08 },
+      coin:   { f: 880, d: 0.10, type: 'sine',   v: 0.10 },
+      stomp:  { f: 200, d: 0.15, type: 'sawtooth', v: 0.12 },
+      hurt:   { f: 120, d: 0.30, type: 'sawtooth', v: 0.15 },
+      win:    { f: 660, d: 0.40, type: 'triangle', v: 0.15 },
+      level:  { f: 440, d: 0.25, type: 'sine',   v: 0.12 },
+      lose:   { f: 90,  d: 0.50, type: 'sawtooth', v: 0.15 },
+    };
+    const p = presets[type] || presets.coin;
+    o.type = p.type;
+    o.frequency.setValueAtTime(p.f, t);
+    g.gain.setValueAtTime(p.v, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + p.d);
+    o.start(t); o.stop(t + p.d);
+  }
+  addEventListener('keydown', (e) => { if (e.code === 'KeyM') muted = !muted; });
+
+  // [PARTE 3] Tema visual por fase
+  const LEVEL_THEMES = [
+    { name: 'Nebulosa Cintilante', bg: ['#0b0626', '#241250', '#4a1f6e'], time: 120, enemies: 6 },
+    { name: 'Cinturão de Asteroides', bg: ['#2a0a0a', '#5a1a1a', '#8a2a1a'], time: 100, enemies: 8 },
+    { name: 'Núcleo Galáctico', bg: ['#0a0015', '#2a0a4a', '#4a0a6a'], time: 80, enemies: 10 },
+  ];
+
   function update(dt) {
     timeSinceStart += dt;
     if (state !== 'playing') {
@@ -308,7 +343,7 @@
       return;
     }
     timeLeft -= dt;
-    if (timeLeft <= 0) { timeLeft = 0; state = 'lost'; return; }
+    if (timeLeft <= 0) { timeLeft = 0; state = 'lost'; playSound('lose'); return; }
     updatePlayer(dt);
     if (state !== 'playing') return;
     updateEnemies(dt);
@@ -320,6 +355,7 @@
       score += timeBonus + lifeBonus;
       bonusInfo = { timeBonus, lifeBonus };
       state = 'won';
+      playSound('win');
     }
     camX += ((player.x - W / 2 + player.w / 2) - camX) * Math.min(1, dt * 8);
     camX = Math.max(0, Math.min(WORLD_W - W, camX));
