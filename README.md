@@ -2,7 +2,7 @@
 
 Jogo de plataforma 2D em HTML5 Canvas + JavaScript puro, estrelado por uma boneca de cabelos loiros e vestido azul em uma jornada por três nebulosas.
 
-**Autor:** Genérico  
+**Autor:** Livia Nazar  
 **Versão:** 1.1 (Parte 2 — Testes, Correção de Bugs e Documentação)  
 **Tecnologias:** HTML5 Canvas, JavaScript ES2020, CSS custom properties
 
