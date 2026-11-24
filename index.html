@@ -299,6 +299,7 @@
       if ((nx - c.x) ** 2 + (ny - c.y) ** 2 < c.r * c.r) {
         c.taken = true; coinCount++; score += 10;
         addPopup('+10', c.x, c.y - 10, '#fff3a0');
+        playSound('coin');
       }
     }
   }
